@@ -1,0 +1,186 @@
+version: "3"
+services:
+  keycloak:
+    image: marouanelhamidi/keycloak-control
+    hostname: keycloak
+    container_name: keycloak
+    networks:
+      - control
+    ports:
+      - "8080:8080"
+    environment:
+      - KEYCLOAK_USER=admin
+      - KEYCLOAK_PASSWORD=admin
+
+
+  eureka:
+    image: marouanelhamidi/eureka-control
+    container_name: eureka
+    networks:
+      - control
+    ports:
+      - "8761:8761"
+    environment:
+      eureka.instance.hostname: eureka
+      eureka.client.serviceUrl.defaultZone: http://eureka:8761/eureka/
+    depends_on:
+      - keycloak
+
+
+  gateway-server:
+    image: marouanelhamidi/gateway-control
+    container_name: gateway-server
+    environment:
+      - EUREKA_SERVER=eureka
+    networks:
+      - control
+    ports:
+      - "8888:8888"
+    depends_on:
+      - eureka
+
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - control
+
+
+  broker:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: broker
+    ports:
+      # To learn about configuring Kafka for access across networks see
+      # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
+      - "9092:9092"
+      - "29092:29092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    networks:
+      - control
+
+
+  product-server:
+    image: marouanelhamidi/products-control
+    container_name: product-server
+    environment:
+      - EUREKA_SERVER=eureka
+      - KEYCLOAK_SERVER=172.17.0.1
+      # if you are in windows use host.docker.internal insted of 172.17.0.1
+    networks:
+      - control
+    ports:
+      - "8084:8084"
+    depends_on:
+      - eureka
+      - keycloak
+      - broker
+
+
+  customer-server:
+    image: marouanelhamidi/customers-control
+    container_name: customer-server
+    environment:
+      - EUREKA_SERVER=eureka
+      - KEYCLOAK_SERVER=172.17.0.1
+      # if you are in windows use host.docker.internal insted of 172.17.0.1
+    networks:
+      - control
+    ports:
+      - "8081:8081"
+    depends_on:
+      - eureka
+      - keycloak
+      - broker
+
+
+  billing-server:
+    image: marouanelhamidi/billings-control
+    container_name: billing-server
+    environment:
+      - EUREKA_SERVER=eureka
+      - KEYCLOAK_SERVER=172.17.0.1
+      - BROKER_SERVER=broker
+      - PORT_SERVER=29092
+      # if you are in windows use host.docker.internal insted of 172.17.0.1
+    networks:
+      - control
+    ports:
+      - "8083:8083"
+    depends_on:
+      - eureka
+      - keycloak
+      - broker
+      - product-server
+      - customer-server
+      - billing-supplier-server
+
+  billing-supplier-server:
+    image: marouanelhamidi/billing-supplier-control
+    container_name: billing-supplier-server
+    environment:
+      - BROKER_SERVER=broker
+      - PORT_SERVER=29092
+      - EUREKA_SERVER=eureka
+      # DockerComposeif you are in windows use host.docker.internal insted of 172.17.0.1
+    networks:
+      - control
+    ports:
+      - "8088:8088"
+    depends_on:
+      - eureka
+      - broker
+
+  analyse-server:
+    image: marouanelhamidi/analyse-control
+    container_name: analyse-server
+    environment:
+      - BROKER_SERVER=broker
+      - PORT_SERVER=29092
+      - EUREKA_SERVER=eureka
+      # if you are in windows use host.docker.internal insted of 172.17.0.1
+    networks:
+      - control
+    ports:
+      - "8089:8089"
+    depends_on:
+      - eureka
+      - broker
+      - billing-supplier-server
+
+  control-front:
+    image: marouanelhamidi/front-server
+    container_name: control-front
+    networks:
+      - control
+    ports:
+      - "4200:80"
+    depends_on:
+      - eureka
+      - keycloak
+      - gateway-server
+      - billing-server
+      - zookeeper
+      - broker
+      - product-server
+      - customer-server
+      - billing-supplier-server
+
+
+
+networks:
+  control:
+
+
